@@ -6,3 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# async_prost ="0"
+dashmap = "5.2.0"
+anyhow = "1" # 错误处理，其实对于库我们应该用 thiserror，但这里简单起见就不节外生枝了
+tracing = "0.1" # //日志处理
+futures = "0.3"
+kv = "0.23"
+tokio = "1.17"
+prost = "0.10"
+prost-types = "0.10"
+
+[build-dependencies]
+prost-build = { version = "0.10" }
