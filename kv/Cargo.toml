@@ -1,0 +1,33 @@
+[package]
+name = "kv"
+version = "0.1.0"
+edition = "2021"
+
+[[example]]
+name="dummy_server"
+crate-type = ["bin"]
+path = "example/dummy_server.rs"
+
+[[example]]
+name="client"
+crate-type = ["bin"]
+path = "example/client.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "1" # 高效处理网络buffer库
+prost = "0.8" # 处理protobuf的代码
+tracing = "0.1" # 日志处理
+thiserror="1.0"
+
+[dev-dependencies]
+anyhow = "1" #错误处理
+async-prost = "0.2.1" # 支持把protobuf封装成tcp frame
+futures = "0.3" # 提供 Stream trait
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "io-util", "macros", "net"]} # 异步网络库
+tracing-subscriber = "0.2" #日志处理
+
+[build-dependencies]
+prost-build = "0.8" # 编译protobuf
+
