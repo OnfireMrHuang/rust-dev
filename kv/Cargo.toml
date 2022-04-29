@@ -20,6 +20,9 @@ bytes = "1" # 高效处理网络buffer库
 prost = "0.8" # 处理protobuf的代码
 tracing = "0.1" # 日志处理
 thiserror="1.0"
+anyhow = "1.0"
+dashmap = "5.2.0"
+
 
 [dev-dependencies]
 anyhow = "1" #错误处理
