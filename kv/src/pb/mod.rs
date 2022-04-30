@@ -2,7 +2,7 @@ pub mod abi;
 
 use crate::*;
 use abi::{command_request::RequestData, *};
-use reqwest::StatusCode;
+use http::StatusCode;
 
 impl CommandRequest {
     /// 创建HGET命令
