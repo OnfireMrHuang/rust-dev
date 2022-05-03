@@ -4,6 +4,7 @@ use crate::*;
 use abi::{command_request::RequestData, *};
 use http::StatusCode;
 
+//
 impl CommandRequest {
     /// 创建HGET命令
     pub fn new_hget(table: impl Into<String>, key: impl Into<String>) -> Self {
@@ -76,7 +77,7 @@ impl From<i64> for Value {
 impl From<Value> for CommandResponse {
     fn from(v: Value) -> Self {
         Self {
-            status: StatusCode::Ok.as_u16() as _,
+            status: StatusCode::OK.as_u16() as _,
             values: vec![v],
             ..Default::default()
         }
@@ -87,7 +88,7 @@ impl From<Value> for CommandResponse {
 impl From<Vec<Kvpair>> for CommandResponse {
     fn from(v: Vec<Kvpair>) -> Self {
         Self {
-            status: StatusCode::Ok.as_u16() as _,
+            status: StatusCode::OK.as_u16() as _,
             pairs: v,
             ..Default::default()
         }
@@ -97,14 +98,14 @@ impl From<Vec<Kvpair>> for CommandResponse {
 impl From<KvError> for CommandResponse {
     fn from(err: KvError) -> Self {
         let mut result = Self {
-            status: StatusCode::Ok.as_u16() as _,
+            status: StatusCode::OK.as_u16() as _,
             message: err.to_string(),
             values: vec![],
             pairs: vec![],
         };
 
         match err {
-            KvError::NotFound(_, _) => result.status = StatusCode::NotFound.as_u16 as _,
+            KvError::NotFound(_, _) => result.status = StatusCode::NOT_FOUND.as_u16() as _,
             KvError::InvalidCommand(_) => result.status = StatusCode::BAD_REQUEST.as_u16() as _,
             _ => {}
         }
