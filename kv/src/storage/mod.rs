@@ -30,6 +30,12 @@ mod tests {
         test_basi_interface(store);
     }
 
+    #[test]
+    fn memtable_iter_should_work() {
+        let store = MemTable::new();
+        test_get_iter(store);
+    }
+
     // #[test]
     // fn memetable_get_all_should_work() {
     //     let store = MemTable::new();
@@ -95,5 +101,28 @@ mod tests {
                 Kvpair::new("k2", "v2".into())
             ]
         )
+    }
+}
+
+/// 构造一个storageiter
+pub struct StorageIter<T> {
+    data: T,
+}
+
+impl<T> StorageIter<T> {
+    pub fn new(data: T) -> Self {
+        Self { data }
+    }
+}
+
+impl<T> Iterator for StorageIter<T>
+where
+    T: Iterator,
+    T::Item: Into<Kvpair>,
+{
+    type Item = Kvpair;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.data.next().map(|v| v.into())
     }
 }
