@@ -23,6 +23,7 @@ thiserror="1.0"
 anyhow = "1.0"
 dashmap = "4"
 http = "0.2"
+sled = "0.34" # sled db
 
 [dev-dependencies]
 anyhow = "1" #错误处理
@@ -30,6 +31,7 @@ async-prost = "0.2.1" # 支持把protobuf封装成tcp frame
 futures = "0.3" # 提供 Stream trait
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "io-util", "macros", "net"]} # 异步网络库
 tracing-subscriber = "0.2" #日志处理
+tempfile = "3"
 
 [build-dependencies]
 prost-build = "0.8" # 编译protobuf
