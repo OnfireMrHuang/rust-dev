@@ -4,6 +4,11 @@ name = "kv2"
 version = "0.1.0"
 edition = "2018"
 
+[[example]]
+name="gen_cert"
+crate-type = ["bin"]
+path = "example/gen_cert.rs"
+
 [[bin]]
 name = "kvs"
 path = "src/server.rs"
@@ -30,6 +35,7 @@ async-prost = "0.2.1" # 支持把 protobuf 封装成 TCP frame
 futures = "0.3" # 提供 Stream trait
 tempfile = "3" # 处理临时目录和临时文件
 tokio-util = { version = "0.6", features = ["codec"]}
+certify = "0.3"
 
 [build-dependencies]
 prost-build = "0.8" # 编译 protobuf
