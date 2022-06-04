@@ -41,7 +41,7 @@ fn create_cert(ca: &CA, domains: &[&str], cn: &str, is_client: bool) -> Result<C
     let (days, cert_type) = if is_client {
         (Some(365), CertType::Client)
     } else {
-        (Some(5 * 365), CertType::server)
+        (Some(5 * 365), CertType::Server)
     };
     let (cert, key) = generate_cert(ca, domains, "CN", "Acme Inc.", cn, None, is_client, days)?;
 

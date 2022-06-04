@@ -8,9 +8,7 @@ pub struct SledDb(Db);
 
 impl SledDb {
     pub fn new(path: impl AsRef<Path>) -> Self {
-        Self {
-            Db: sled::open(path).unwrap(),
-        }
+        Self(sled::open(path).unwrap())
     }
 
     // 在sleddb里，因为它可以scan_prefix，我们用prefix
@@ -34,12 +32,12 @@ impl Storage for SledDb {
     fn get(&self, table: &str, key: &str) -> Result<Option<Value>, KvError> {
         let name = SledDb::get_full_key(table, key);
         let result = self.0.get(name.as_bytes())?.map(|v| v.as_ref().try_into());
-        flip(result);
+        flip(result)
     }
 
     fn set(&self, table: &str, key: String, value: Value) -> Result<Option<Value>, KvError> {
         let name = SledDb::get_full_key(table, &key);
-        let data: Vec = value.try_into()?;
+        let data: Vec<u8> = value.try_into()?;
         let result = self.0.insert(name, data)?.map(|v| v.as_ref().try_into());
         flip(result)
     }
@@ -84,5 +82,5 @@ fn ivec_to_key(ivec: &[u8]) -> &str {
     let s = str::from_utf8(ivec).unwrap();
     let mut iter = s.split(':');
     iter.next();
-    // iter.next().unwrap();
+    iter.next().unwrap()
 }
