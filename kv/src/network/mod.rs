@@ -1,6 +1,10 @@
 mod frame;
-use bytes::BytesMut;
+mod tls;
+
 pub use frame::{read_frame, FrameCoder};
+pub use tls::{TlsClientConnector, TlsServerAcceptor};
+
+use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::info;
 
@@ -127,7 +131,7 @@ mod tests {
         let mut client = ProstClientStream::new(stream);
 
         let v: Value = Bytes::from(vec![0u8; 16384]).into();
-        let cmd = CommandRequest::new_hset("t2", "k2", v.clone().into());
+        let cmd = CommandRequest::new_hset("t2", "k2", v.clone());
         let res = client.execute(cmd).await?;
 
         assert_res_ok(res, &[Value::default()], &[]);
@@ -135,7 +139,7 @@ mod tests {
         let cmd = CommandRequest::new_hget("t2", "k2");
         let res = client.execute(cmd).await?;
 
-        assert_res_ok(res, &[v.into()], &[]);
+        assert_res_ok(res, &[v], &[]);
 
         Ok(())
     }

@@ -1,27 +1,28 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use rustls_native_certs;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_resuls::{
-    client::TlsStream as ClientTlsStream, server::TlsStream as ServerTlsStream, TlsAcceptor,
-};
-use tokio_rustls::rustls::{internal::pemfile, Certificate, ClientConfig, ServeCofig};
-use tokio_rustls::rustls::{AllowAnyAuthenticatedClient, NoclientAuth, PrivateKey, RootCertStore};
+use tokio_rustls::rustls::{internal::pemfile, Certificate, ClientConfig, ServerConfig};
+use tokio_rustls::rustls::{AllowAnyAuthenticatedClient, NoClientAuth, PrivateKey, RootCertStore};
 use tokio_rustls::webpki::DNSNameRef;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::{
+    client::TlsStream as ClientTlsStream, server::TlsStream as ServerTlsStream, TlsAcceptor,
+};
 
 use crate::KvError;
 
-/// KV server 自己的ALPN
+/// KV Server 自己的 ALPN (Application-Layer Protocol Negotiation)
 const ALPN_KV: &str = "kv";
 
-/// 存放TLS serverConfig并提供方法accept把底层的协议转换成TLS
+/// 存放 TLS ServerConfig 并提供方法 accept 把底层的协议转换成 TLS
 #[derive(Clone)]
 pub struct TlsServerAcceptor {
     inner: Arc<ServerConfig>,
 }
 
-/// 存放TLS Client 并提供方法connect把底层的协议转换为TLS
+/// 存放 TLS Client 并提供方法 connect 把底层的协议转换成 TLS
 #[derive(Clone)]
 pub struct TlsClientConnector {
     pub config: Arc<ClientConfig>,
@@ -29,7 +30,7 @@ pub struct TlsClientConnector {
 }
 
 impl TlsClientConnector {
-    // 加载client cert / ca cert, 生成ClientConfig
+    /// 加载 client cert / CA cert，生成 ClientConfig
     pub fn new(
         domain: impl Into<String>,
         identity: Option<(&str, &str)>,
@@ -50,8 +51,8 @@ impl TlsClientConnector {
             Err((None, error)) => return Err(error.into()),
         };
 
-        // 如果有签署服务器的CA证书，则加载它，这样服务器证书不在根证书链
-        // 但是这个CA证书能验证它，也可以
+        // 如果有签署服务器的 CA 证书，则加载它，这样服务器证书不在根证书链
+        // 但是这个 CA 证书能验证它，也可以
         if let Some(cert) = server_ca {
             let mut buf = Cursor::new(cert);
             config.root_store.add_pem_file(&mut buf).unwrap();
@@ -63,92 +64,90 @@ impl TlsClientConnector {
         })
     }
 
-	/// 触发Tls协议，把底层的stream转换成TLS stream
-	pub async fn connect<S>(&self, stream: S) -> Result<ClientTlsStream<S>, KvError>
-	where 
-		S: AsyncRead + AsyncWrite + Unpin + Send,
-	{
-		let dns = DNSNameRef::try_from_ascii_str(self.domain.as_str()).
-		map_err(|_| KvError::Internal("Invalid DNS name".into()))?;
+    /// 触发 TLS 协议，把底层的 stream 转换成 TLS stream
+    pub async fn connect<S>(&self, stream: S) -> Result<ClientTlsStream<S>, KvError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        let dns = DNSNameRef::try_from_ascii_str(self.domain.as_str())
+            .map_err(|_| KvError::Internal("Invalid DNS name".into()))?;
 
-		let stream = TlsConnector::from(self.config.clone()).
-		connect(dns,stream).await?;
+        let stream = TlsConnector::from(self.config.clone())
+            .connect(dns, stream)
+            .await?;
 
-		Ok(stream)
-	}
+        Ok(stream)
+    }
 }
 
 impl TlsServerAcceptor {
-	// 加载server cert /ca cert，生成ServerConfig
-	pub fn new(cert: &str, key: &str, client_ca: Option<&str>) -> Result<(Self, KvError)> {
-		let certs = load_certs(cert)?;
-		let key = load_key(key)?;
+    /// 加载 server cert / CA cert，生成 ServerConfig
+    pub fn new(cert: &str, key: &str, client_ca: Option<&str>) -> Result<Self, KvError> {
+        let certs = load_certs(cert)?;
+        let key = load_key(key)?;
 
-		let mut config = match client_ca {
-			None => ServerConfig::new(NoClientAuth::new()),
-			Some(cert) => {
-				// 如果客户端证书是某个CA证书签发的，则把这个CA证书加载到信任链中
-				let mut cert = Cursor::new(cert);
-				let mut client_root_cert_store = RootCertStore::empty();
-				client_root_cert_store.
-					add_pem_file(&mut cert).
-					map_err(|_| KvError::CertifcateParseError("CA", "cert"))?;
-				
-				let client_auth = AllowAnyAuthenticatedClient::new(client_root_cert_store);
-				ServerConfig::new(client_auth)
-			}
-		};
+        let mut config = match client_ca {
+            None => ServerConfig::new(NoClientAuth::new()),
+            Some(cert) => {
+                // 如果客户端证书是某个 CA 证书签发的，则把这个 CA 证书加载到信任链中
+                let mut cert = Cursor::new(cert);
+                let mut client_root_cert_store = RootCertStore::empty();
+                client_root_cert_store
+                    .add_pem_file(&mut cert)
+                    .map_err(|_| KvError::CertifcateParseError("CA", "cert"))?;
 
-		// 加载服务器证书
-		config.set_single_cert(certs, key).
-			map_err(|_| KvError::CertifcateParseError("server", "cert"))?;
-		config.set_protocols(&[Vec::from(&ALPN_KV[..])]);
+                let client_auth = AllowAnyAuthenticatedClient::new(client_root_cert_store);
+                ServerConfig::new(client_auth)
+            }
+        };
 
-		Ok(Self {
-			inner: Arc::new(config),
-		})
-	}
-	
-	/// 触发TLS协议，把底层的stream转换成TLS stream
-	pub async fn accept<S>(&self, stream: S) -> Result<ServerTlsStream<S>, KvError>
-	where 
-		S: AsyncRead + AsyncWrite + Unpin + Send,
-	{
-		let acceptor = TlsAcceptor::from(self.inner_clone());
-		Ok(acceptor.accept(stream).await?)
-	}
+        // 加载服务器证书
+        config
+            .set_single_cert(certs, key)
+            .map_err(|_| KvError::CertifcateParseError("server", "cert"))?;
+        config.set_protocols(&[Vec::from(ALPN_KV)]);
+
+        Ok(Self {
+            inner: Arc::new(config),
+        })
+    }
+
+    /// 触发 TLS 协议，把底层的 stream 转换成 TLS stream
+    pub async fn accept<S>(&self, stream: S) -> Result<ServerTlsStream<S>, KvError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        let acceptor = TlsAcceptor::from(self.inner.clone());
+        Ok(acceptor.accept(stream).await?)
+    }
 }
 
-
 fn load_certs(cert: &str) -> Result<Vec<Certificate>, KvError> {
-	let mut cert = Cursor::new(cert);
-	Ok(acceptor.accept(stream).await?)
+    let mut cert = Cursor::new(cert);
+    pemfile::certs(&mut cert).map_err(|_| KvError::CertifcateParseError("server", "cert"))
 }
 
 fn load_key(key: &str) -> Result<PrivateKey, KvError> {
-	let mut cursor = Cursor::new(key);
+    let mut cursor = Cursor::new(key);
 
-	// 先尝试用PKCS8加载私钥
-	if let Ok(mut keys) = pemfile::pkcs8_private_keys(&mut cursor) {
-		if !keys.is_empty() {
-			return Ok(keys.remove(0));
-		}
-	}
+    // 先尝试用 PKCS8 加载私钥
+    if let Ok(mut keys) = pemfile::pkcs8_private_keys(&mut cursor) {
+        if !keys.is_empty() {
+            return Ok(keys.remove(0));
+        }
+    }
 
-	// 再尝试加载RSA key
-	cursor.set_position(0);
-	if let Ok(mut keys) = pemfile::rsa_private_keys(&mut cursor) {
-		if !keys.is_empty() {
-			return Ok(keys.remove(0));
-		}
-	}
+    // 再尝试加载 RSA key
+    cursor.set_position(0);
+    if let Ok(mut keys) = pemfile::rsa_private_keys(&mut cursor) {
+        if !keys.is_empty() {
+            return Ok(keys.remove(0));
+        }
+    }
 
-	// 不支持的私钥类型
-	Err(KvError::CertifcateParseError("private", "key"))
+    // 不支持的私钥类型
+    Err(KvError::CertifcateParseError("private", "key"))
 }
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -190,7 +189,7 @@ mod tests {
         let client_identity = Some((CLIENT_CERT, CLIENT_KEY));
         let ca = Some(CA_CERT);
 
-        let addr = start_server(ca.clone()).await?;
+        let addr = start_server(ca).await?;
 
         let connector = TlsClientConnector::new("kvserver.acme.inc", client_identity, ca)?;
         let stream = TcpStream::connect(addr).await?;
