@@ -160,3 +160,52 @@ mod tests {
         Ok(addr)
     }
 }
+
+#[cfg(test)]
+pub mod utils {
+    use bytes::{BufMut, BytesMut};
+    use std::task::Poll;
+    use tokio::io::{AsyncRead, AsyncWrite};
+
+    pub struct DummyStream {
+        pub buf: BytesMut,
+    }
+
+    impl AsyncRead for DummyStream {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let len = buf.capacity();
+            let data = self.get_mut().buf.split_to(len);
+            buf.put_slice(&data);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for DummyStream {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> Poll<Result<usize, std::io::Error>> {
+            self.get_mut().buf.put_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<(), std::io::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<(), std::io::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+}

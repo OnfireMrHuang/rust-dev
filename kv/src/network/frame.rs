@@ -118,22 +118,24 @@ mod tests {
     use crate::Value;
     use bytes::Bytes;
 
-    struct DummyStream {
-        buf: BytesMut,
-    }
+    use crate::{utils::DummyStream, CommandRequest};
+    use anyhow::Result;
+    use futures::prelude::*;
 
-    impl AsyncRead for DummyStream {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            let len = buf.capacity();
-            let data = self.get_mut().buf.split_to(len);
-            buf.put_slice(&data);
-            std::task::Poll::Ready(Ok(()))
-        }
-    }
+    // #[tokio::test]
+    // async fn prost_stream_should_work() -> Result<()> {
+    //     let buf = BytesMut::new();
+    //     let stream = DummyStream { buf };
+    //     let mut stream = ProstStream::<_, CommandRequest, CommandRequest>::new(stream);
+    //     let cmd = CommandRequest::new_hdel("t1", "k1");
+    //     stream.send(cmd.clone()).await?;
+    //     if let Some(Ok(s)) = stream.next().await {
+    //         assert_eq!(s, cmd);
+    //     } else {
+    //         assert!(false);
+    //     }
+    //     Ok(())
+    // }
 
     #[test]
     fn command_request_encode_decode_should_work() {
