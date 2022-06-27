@@ -80,7 +80,7 @@ impl NginxLog {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut nginx_log = NginxLog::try_new("data/schema.yml", "data/nginx_logs.csv", b' ').await?;
+    let mut nginx_log = NginxLog::try_new("data/schema.yaml", "data/nginx_logs.csv", b' ').await?;
     // 从 stdin 中按行读取内容，当做 sql 查询，进行处理
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
