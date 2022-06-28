@@ -34,7 +34,8 @@ tracing = "0.1" # 日志处理
 tracing-subscriber = "0.2" # 日志处理
 tokio-util = { version = "0.6", features = ["compat"]} # tokio 和 futures 的兼容性库
 yamux = "0.9" # yamux 多路复用支持
-
+serde = { version = "1", features = ["derive"] } # 序列化/反序列化
+toml = "0.5" # toml 支持
 
 [dev-dependencies]
 async-prost = "0.2.1" # 支持把 protobuf 封装成 TCP frame
