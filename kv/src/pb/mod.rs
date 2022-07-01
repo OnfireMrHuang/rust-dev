@@ -1,6 +1,6 @@
 pub mod abi;
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use abi::{command_request::RequestData, *};
 use bytes::Bytes;
@@ -89,6 +89,64 @@ impl CommandRequest {
             })),
         }
     }
+
+    pub fn new_subscribe(name: impl Into<String>) -> Self {
+        Self {
+            request_data: Some(RequestData::Subscribe(Subscribe { topic: name.into() })),
+        }
+    }
+
+    pub fn new_unsubscribe(name: impl Into<String>, id: u32) -> Self {
+        Self {
+            request_data: Some(RequestData::Unsubscribe(Unsubscribe {
+                topic: name.into(),
+                id,
+            })),
+        }
+    }
+
+    pub fn new_publish(name: impl Into<String>, data: Vec<Value>) -> Self {
+        Self {
+            request_data: Some(RequestData::Publish(Publish {
+                topic: name.into(),
+                data,
+            })),
+        }
+    }
+
+    /// 转换成 string 做错误处理
+    pub fn format(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl CommandResponse {
+    pub fn ok() -> Self {
+        CommandResponse {
+            status: StatusCode::OK.as_u16() as _,
+            ..Default::default()
+        }
+    }
+
+    pub fn internal_error(msg: String) -> Self {
+        CommandResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16() as _,
+            message: msg,
+            ..Default::default()
+        }
+    }
+
+    /// 转换成 string 做错误处理
+    pub fn format(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl Value {
+    /// 转换成 string 做错误处理
+    pub fn format(&self) -> String {
+        format!("{:?}", self)
+    }
 }
 
 impl Kvpair {
@@ -175,7 +233,7 @@ impl From<KvError> for CommandResponse {
         };
 
         match e {
-            KvError::NotFound(_, _) => result.status = StatusCode::NOT_FOUND.as_u16() as _,
+            KvError::NotFound(_) => result.status = StatusCode::NOT_FOUND.as_u16() as _,
             KvError::InvalidCommand(_) => result.status = StatusCode::BAD_REQUEST.as_u16() as _,
             _ => {}
         }
@@ -216,7 +274,18 @@ impl TryFrom<Value> for i64 {
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v.value {
             Some(value::Value::Integer(i)) => Ok(i),
-            _ => Err(KvError::ConvertError(v, "Integer")),
+            _ => Err(KvError::ConvertError(v.format(), "Integer")),
+        }
+    }
+}
+
+impl TryFrom<&Value> for i64 {
+    type Error = KvError;
+
+    fn try_from(v: &Value) -> Result<Self, Self::Error> {
+        match v.value {
+            Some(value::Value::Integer(i)) => Ok(i),
+            _ => Err(KvError::ConvertError(v.format(), "Integer")),
         }
     }
 }
@@ -227,7 +296,7 @@ impl TryFrom<Value> for f64 {
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v.value {
             Some(value::Value::Float(f)) => Ok(f),
-            _ => Err(KvError::ConvertError(v, "Float")),
+            _ => Err(KvError::ConvertError(v.format(), "Float")),
         }
     }
 }
@@ -238,7 +307,7 @@ impl TryFrom<Value> for Bytes {
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v.value {
             Some(value::Value::Binary(b)) => Ok(b),
-            _ => Err(KvError::ConvertError(v, "Binary")),
+            _ => Err(KvError::ConvertError(v.format(), "Binary")),
         }
     }
 }
@@ -249,7 +318,7 @@ impl TryFrom<Value> for bool {
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v.value {
             Some(value::Value::Bool(b)) => Ok(b),
-            _ => Err(KvError::ConvertError(v, "Boolean")),
+            _ => Err(KvError::ConvertError(v.format(), "Boolean")),
         }
     }
 }
@@ -269,5 +338,19 @@ impl TryFrom<&[u8]> for Value {
     fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
         let msg = Value::decode(data)?;
         Ok(msg)
+    }
+}
+
+impl TryFrom<&CommandResponse> for i64 {
+    type Error = KvError;
+
+    fn try_from(value: &CommandResponse) -> Result<Self, Self::Error> {
+        if value.status != StatusCode::OK.as_u16() as u32 {
+            return Err(KvError::ConvertError(value.format(), "CommandResponse"));
+        }
+        match value.values.get(0) {
+            Some(v) => v.try_into(),
+            None => Err(KvError::ConvertError(value.format(), "CommandResponse")),
+        }
     }
 }

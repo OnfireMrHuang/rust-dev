@@ -1,6 +1,5 @@
-use crate::{FrameCoder, KvError};
 use bytes::BytesMut;
-use futures::{Sink, Stream};
+use futures::{ready, FutureExt, Sink, Stream};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -8,13 +7,15 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
-/// 处理KV server prost frame的stream
+use crate::{read_frame, FrameCoder, KvError};
+
+/// 处理 KV server prost frame 的 stream
 pub struct ProstStream<S, In, Out> {
-    // inner stream
+    // innner stream
     stream: S,
     // 写缓存
     wbuf: BytesMut,
-    // 写了多少字节
+    // 写入了多少字节
     written: usize,
     // 读缓存
     rbuf: BytesMut,
@@ -23,6 +24,87 @@ pub struct ProstStream<S, In, Out> {
     _in: PhantomData<In>,
     _out: PhantomData<Out>,
 }
+
+impl<S, In, Out> Stream for ProstStream<S, In, Out>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+    In: Unpin + Send + FrameCoder,
+    Out: Unpin + Send,
+{
+    /// 当调用 next() 时，得到 Result<In, KvError>
+    type Item = Result<In, KvError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // 上一次调用结束后 rbuf 应该为空
+        assert!(self.rbuf.is_empty());
+
+        // 从 rbuf 中分离出 rest（摆脱对 self 的引用）
+        let mut rest = self.rbuf.split_off(0);
+
+        // 使用 read_frame 来获取数据
+        let fut = read_frame(&mut self.stream, &mut rest);
+        ready!(Box::pin(fut).poll_unpin(cx))?;
+
+        // 拿到一个 frame 的数据，把 buffer 合并回去
+        self.rbuf.unsplit(rest);
+
+        // 调用 decode_frame 获取解包后的数据
+        Poll::Ready(Some(In::decode_frame(&mut self.rbuf)))
+    }
+}
+
+/// 当调用 send() 时，会把 Out 发出去
+impl<S, In, Out> Sink<&Out> for ProstStream<S, In, Out>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    In: Unpin + Send,
+    Out: Unpin + Send + FrameCoder,
+{
+    /// 如果发送出错，会返回 KvError
+    type Error = KvError;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: &Out) -> Result<(), Self::Error> {
+        let this = self.get_mut();
+        item.encode_frame(&mut this.wbuf)?;
+
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+
+        // 循环写入 stream 中
+        while this.written != this.wbuf.len() {
+            let n = ready!(Pin::new(&mut this.stream).poll_write(cx, &this.wbuf[this.written..]))?;
+            this.written += n;
+        }
+
+        // 清除 wbuf
+        this.wbuf.clear();
+        this.written = 0;
+
+        // 调用 stream 的 pull_flush 确保写入
+        ready!(Pin::new(&mut this.stream).poll_flush(cx)?);
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // 调用 stream 的 pull_flush 确保写入
+        ready!(self.as_mut().poll_flush(cx))?;
+
+        // 调用 stream 的 pull_shutdown 确保 stream 关闭
+        ready!(Pin::new(&mut self.stream).poll_shutdown(cx))?;
+        Poll::Ready(Ok(()))
+    }
+}
+
+// 一般来说，如果我们的 Stream 是 Unpin，最好实现一下
+// Unpin 不像 Send/Sync 会自动实现
+impl<S, In, Out> Unpin for ProstStream<S, In, Out> where S: Unpin {}
 
 impl<S, In, Out> ProstStream<S, In, Out>
 where
@@ -41,81 +123,32 @@ where
     }
 }
 
-// 一般来说，如果我们的 Stream 是 Unpin，最好实现一下
-impl<S, Req, Res> Unpin for ProstStream<S, Req, Res> where S: Unpin {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{utils::DummyStream, CommandRequest};
+    use anyhow::Result;
+    use futures::prelude::*;
 
-// 实现stream
-impl<S, In, Out> Stream for ProstStream<S, In, Out>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send,
-    In: Unpin + Send + FrameCoder,
-    Out: Unpin + Send,
-{
-    // 当调用next()时，得到Result<In, KvError>
-    type Item = Result<In, KvError>;
+    #[allow(clippy::all)]
+    #[tokio::test]
+    async fn prost_stream_should_work() -> Result<()> {
+        let buf = BytesMut::new();
+        let stream = DummyStream { buf };
 
-    fn poll_next(self: Pin<&mut self>, ctx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // 上一次调用结束后rbuf应该为空
-        assert!(self.rbuf.len() == 0);
+        // 创建 ProstStream
+        let mut stream = ProstStream::<_, CommandRequest, CommandRequest>::new(stream);
+        let cmd = CommandRequest::new_hdel("t1", "k1");
 
-        // 从rbuf中分离出rest(摆脱对self的引用)
-        let mut rest = self.rbuf.split_off(0);
+        // 使用 ProstStream 发送数据
+        stream.send(&cmd).await?;
 
-        // 使用read_frmae来获取数据
-        let fut = read_frame(&mut self.stream, &mut rest);
-        ready!(Box::pin(fut).poll_unpin(ctx));
-
-        // 拿到一个frame数据，把buffer合并回去
-        self.rbuf.unsplit(rest);
-
-        // 调用decode_frame获取解包后的数据
-        Poll::Ready(Some(In::decode_frame(&mut self.rbuf)));
-    }
-}
-
-// 实现Sink
-impl<S, In, Out> Sink<Out> for ProstStream<S, In, Out>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-    In: Unpin + Send,
-    Out: Unpin + Send + FrameCoder,
-{
-    /// 如果发送出错，会返回KvError
-    type Error = KvError;
-
-    fn poll_ready(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn start_end(self: Pin<&mut Self>, item: Out) -> Result<(), Self::Error> {
-        let this = self.get_mut();
-        item.encode_frame(&mut this.wbuf)?;
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Result<()>, Self::Error> {
-        let this = self.get_mut();
-
-        // 循环写入stream中
-        while this.written != this.wbuf.len() {
-            let n = ready!(Pin::new(&mut this.stream).poll_write(cx, &this.wbuf[this.written..]))?;
-            this.written += n;
+        // 使用 ProstStream 接收数据
+        if let Some(Ok(s)) = stream.next().await {
+            assert_eq!(s, cmd);
+        } else {
+            assert!(false);
         }
-
-        // 清除 wbuf
-        this.wbuf.clear();
-        this.written = 0;
-
-        // 调用 stream 的 poll_flush 确保写入
-        ready!(Pin::new(&mut this.stream).poll_flush(cx)?);
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Result<()>, Self::Error> {
-        // 调用 stream 的 poll_flush 确保写入
-        ready!(self.as_mut().poll_flush(cx))?;
-        // 调用 stream 的 poll_shutdown 确保 stream 关闭
-        ready!(Pin::new(&mut self.stream).poll_shutdown(cx))?;
-        Poll::Ready(Ok(()))
+        Ok(())
     }
 }
