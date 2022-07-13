@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use futures::StreamExt;
-use simple_kv::{
+use kv::{
     start_quic_client_with_config, start_yamux_client_with_config, AppStream, ClientConfig,
     CommandRequest, KvError, NetworkType, ProstClientStream,
 };

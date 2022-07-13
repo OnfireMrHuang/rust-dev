@@ -1,11 +1,11 @@
 use anyhow::Result;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::StreamExt;
-use rand::prelude::SliceRandom;
-use simple_kv::{
+use kv::{
     start_server_with_config, start_yamux_client_with_config, AppStream, ClientConfig,
     CommandRequest, ServerConfig, StorageConfig, YamuxCtrl,
 };
+use rand::prelude::SliceRandom;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::runtime::Builder;

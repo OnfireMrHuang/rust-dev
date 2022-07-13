@@ -1,5 +1,5 @@
 use anyhow::Result;
-use simple_kv::{
+use kv::{
     ClientConfig, ClientTlsConfig, GeneralConfig, LogConfig, NetworkType, RotationConfig,
     ServerConfig, ServerTlsConfig, StorageConfig,
 };

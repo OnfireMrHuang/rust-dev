@@ -1,7 +1,7 @@
 use std::{env, str::FromStr};
 
 use anyhow::Result;
-use simple_kv::{start_server_with_config, RotationConfig, ServerConfig};
+use kv::{start_server_with_config, RotationConfig, ServerConfig};
 use tokio::fs;
 use tracing::span;
 use tracing_subscriber::{
