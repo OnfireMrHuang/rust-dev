@@ -1,7 +1,6 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use rustls_native_certs;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::rustls::{internal::pemfile, Certificate, ClientConfig, ServerConfig};
 use tokio_rustls::rustls::{AllowAnyAuthenticatedClient, NoClientAuth, PrivateKey, RootCertStore};
@@ -10,6 +9,7 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::{
     client::TlsStream as ClientTlsStream, server::TlsStream as ServerTlsStream, TlsAcceptor,
 };
+use tracing::instrument;
 
 use crate::KvError;
 
@@ -31,8 +31,9 @@ pub struct TlsClientConnector {
 
 impl TlsClientConnector {
     /// 加载 client cert / CA cert，生成 ClientConfig
+    #[instrument(name = "tls_connector_new", skip_all)]
     pub fn new(
-        domain: impl Into<String>,
+        domain: impl Into<String> + std::fmt::Debug,
         identity: Option<(&str, &str)>,
         server_ca: Option<&str>,
     ) -> Result<Self, KvError> {
@@ -45,17 +46,17 @@ impl TlsClientConnector {
             config.set_single_client_cert(certs, key)?;
         }
 
-        // 加载本地信任的根证书链
-        config.root_store = match rustls_native_certs::load_native_certs() {
-            Ok(store) | Err((Some(store), _)) => store,
-            Err((None, error)) => return Err(error.into()),
-        };
-
         // 如果有签署服务器的 CA 证书，则加载它，这样服务器证书不在根证书链
         // 但是这个 CA 证书能验证它，也可以
         if let Some(cert) = server_ca {
             let mut buf = Cursor::new(cert);
             config.root_store.add_pem_file(&mut buf).unwrap();
+        } else {
+            // 加载本地信任的根证书链
+            config.root_store = match rustls_native_certs::load_native_certs() {
+                Ok(store) | Err((Some(store), _)) => store,
+                Err((None, error)) => return Err(error.into()),
+            };
         }
 
         Ok(Self {
@@ -64,6 +65,7 @@ impl TlsClientConnector {
         })
     }
 
+    #[instrument(name = "tls_client_connect", skip_all)]
     /// 触发 TLS 协议，把底层的 stream 转换成 TLS stream
     pub async fn connect<S>(&self, stream: S) -> Result<ClientTlsStream<S>, KvError>
     where
@@ -82,6 +84,7 @@ impl TlsClientConnector {
 
 impl TlsServerAcceptor {
     /// 加载 server cert / CA cert，生成 ServerConfig
+    #[instrument(name = "tls_acceptor_new", skip_all)]
     pub fn new(cert: &str, key: &str, client_ca: Option<&str>) -> Result<Self, KvError> {
         let certs = load_certs(cert)?;
         let key = load_key(key)?;
@@ -112,6 +115,7 @@ impl TlsServerAcceptor {
         })
     }
 
+    #[instrument(name = "tls_server_accept", skip_all)]
     /// 触发 TLS 协议，把底层的 stream 转换成 TLS stream
     pub async fn accept<S>(&self, stream: S) -> Result<ServerTlsStream<S>, KvError>
     where
@@ -150,16 +154,8 @@ fn load_key(key: &str) -> Result<PrivateKey, KvError> {
 }
 
 #[cfg(test)]
-mod tests {
-
-    use std::net::SocketAddr;
-
-    use super::*;
-    use anyhow::Result;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{TcpListener, TcpStream},
-    };
+pub mod tls_utils {
+    use crate::{KvError, TlsClientConnector, TlsServerAcceptor};
 
     const CA_CERT: &str = include_str!("../../fixtures/ca.cert");
     const CLIENT_CERT: &str = include_str!("../../fixtures/client.cert");
@@ -167,13 +163,41 @@ mod tests {
     const SERVER_CERT: &str = include_str!("../../fixtures/server.cert");
     const SERVER_KEY: &str = include_str!("../../fixtures/server.key");
 
+    pub fn tls_connector(client_cert: bool) -> Result<TlsClientConnector, KvError> {
+        let ca = Some(CA_CERT);
+        let client_identity = Some((CLIENT_CERT, CLIENT_KEY));
+
+        match client_cert {
+            false => TlsClientConnector::new("kvserver.acme.inc", None, ca),
+            true => TlsClientConnector::new("kvserver.acme.inc", client_identity, ca),
+        }
+    }
+
+    pub fn tls_acceptor(client_cert: bool) -> Result<TlsServerAcceptor, KvError> {
+        let ca = Some(CA_CERT);
+        match client_cert {
+            true => TlsServerAcceptor::new(SERVER_CERT, SERVER_KEY, ca),
+            false => TlsServerAcceptor::new(SERVER_CERT, SERVER_KEY, None),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tls_utils::tls_acceptor;
+    use crate::network::tls::tls_utils::tls_connector;
+    use anyhow::Result;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+    };
+
     #[tokio::test]
     async fn tls_should_work() -> Result<()> {
-        let ca = Some(CA_CERT);
-
-        let addr = start_server(None).await?;
-
-        let connector = TlsClientConnector::new("kvserver.acme.inc", None, ca)?;
+        let addr = start_server(false).await?;
+        let connector = tls_connector(false)?;
         let stream = TcpStream::connect(addr).await?;
         let mut stream = connector.connect(stream).await?;
         stream.write_all(b"hello world!").await?;
@@ -186,12 +210,8 @@ mod tests {
 
     #[tokio::test]
     async fn tls_with_client_cert_should_work() -> Result<()> {
-        let client_identity = Some((CLIENT_CERT, CLIENT_KEY));
-        let ca = Some(CA_CERT);
-
-        let addr = start_server(ca).await?;
-
-        let connector = TlsClientConnector::new("kvserver.acme.inc", client_identity, ca)?;
+        let addr = start_server(true).await?;
+        let connector = tls_connector(true)?;
         let stream = TcpStream::connect(addr).await?;
         let mut stream = connector.connect(stream).await?;
         stream.write_all(b"hello world!").await?;
@@ -204,9 +224,10 @@ mod tests {
 
     #[tokio::test]
     async fn tls_with_bad_domain_should_not_work() -> Result<()> {
-        let addr = start_server(None).await?;
+        let addr = start_server(false).await?;
 
-        let connector = TlsClientConnector::new("kvserver1.acme.inc", None, Some(CA_CERT))?;
+        let mut connector = tls_connector(false)?;
+        connector.domain = Arc::new("kvserver1.acme.inc".into());
         let stream = TcpStream::connect(addr).await?;
         let result = connector.connect(stream).await;
 
@@ -215,8 +236,8 @@ mod tests {
         Ok(())
     }
 
-    async fn start_server(ca: Option<&str>) -> Result<SocketAddr> {
-        let acceptor = TlsServerAcceptor::new(SERVER_CERT, SERVER_KEY, ca)?;
+    async fn start_server(client_cert: bool) -> Result<SocketAddr> {
+        let acceptor = tls_acceptor(client_cert)?;
 
         let echo = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = echo.local_addr().unwrap();

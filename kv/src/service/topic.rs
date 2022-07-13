@@ -102,6 +102,7 @@ impl Topic for Arc<Broadcaster> {
                     }
                 }
             }
+
             for id in ids {
                 self.remove_subscription(name.clone(), id);
             }

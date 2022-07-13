@@ -19,10 +19,28 @@ pub struct ClientConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GeneralConfig {
     pub addr: String,
+    #[serde(default)]
+    pub network: NetworkType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkType {
+    Tcp,
+    Quic,
+}
+
+impl Default for NetworkType {
+    fn default() -> Self {
+        NetworkType::Tcp
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct LogConfig {
+    pub enable_log_file: bool,
+    pub enable_jaeger: bool,
+    pub log_level: String,
     pub path: String,
     pub rotation: RotationConfig,
 }

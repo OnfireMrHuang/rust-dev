@@ -61,6 +61,7 @@ where
             Ok(())
         }
     }
+
     /// 把一个完整的 frame decode 成一个 Message
     fn decode_frame(buf: &mut BytesMut) -> Result<Self, KvError> {
         // 先取 4 字节，从中拿出长度和 compression bit
@@ -88,7 +89,7 @@ where
 impl FrameCoder for CommandRequest {}
 impl FrameCoder for CommandResponse {}
 
-fn decode_header(header: usize) -> (usize, bool) {
+pub fn decode_header(header: usize) -> (usize, bool) {
     let len = header & !COMPRESSION_BIT;
     let compressed = header & COMPRESSION_BIT == COMPRESSION_BIT;
     (len, compressed)
@@ -115,27 +116,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Value;
+    use crate::{utils::DummyStream, Value};
     use bytes::Bytes;
-
-    use crate::{utils::DummyStream, CommandRequest};
-    use anyhow::Result;
-    use futures::prelude::*;
-
-    // #[tokio::test]
-    // async fn prost_stream_should_work() -> Result<()> {
-    //     let buf = BytesMut::new();
-    //     let stream = DummyStream { buf };
-    //     let mut stream = ProstStream::<_, CommandRequest, CommandRequest>::new(stream);
-    //     let cmd = CommandRequest::new_hdel("t1", "k1");
-    //     stream.send(cmd.clone()).await?;
-    //     if let Some(Ok(s)) = stream.next().await {
-    //         assert_eq!(s, cmd);
-    //     } else {
-    //         assert!(false);
-    //     }
-    //     Ok(())
-    // }
 
     #[test]
     fn command_request_encode_decode_should_work() {

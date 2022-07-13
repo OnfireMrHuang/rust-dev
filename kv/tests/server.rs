@@ -1,7 +1,7 @@
 use anyhow::Result;
-use kv6::{
-    start_client_with_config, start_server_with_config, ClientConfig, CommandRequest,
-    ProstClientStream, ServerConfig, StorageConfig,
+use simple_kv::{
+    start_server_with_config, start_yamux_client_with_config, AppStream, ClientConfig,
+    CommandRequest, ServerConfig, StorageConfig,
 };
 use std::time::Duration;
 use tokio::time;
@@ -23,17 +23,16 @@ async fn yamux_server_client_full_tests() -> Result<()> {
     let mut config: ClientConfig = toml::from_str(include_str!("../fixtures/client.conf"))?;
     config.general.addr = addr.into();
 
-    let mut ctrl = start_client_with_config(&config).await.unwrap();
-    let stream = ctrl.open_stream().await?;
-    let mut client = ProstClientStream::new(stream);
+    let mut ctrl = start_yamux_client_with_config(&config).await.unwrap();
+    let mut stream = ctrl.open_stream().await?;
 
     // 生成一个 HSET 命令
     let cmd = CommandRequest::new_hset("table1", "hello", "world".to_string().into());
-    client.execute_unary(&cmd).await?;
+    stream.execute_unary(&cmd).await?;
 
     // 生成一个 HGET 命令
     let cmd = CommandRequest::new_hget("table1", "hello");
-    let data = client.execute_unary(&cmd).await?;
+    let data = stream.execute_unary(&cmd).await?;
 
     assert_eq!(data.status, 200);
     assert_eq!(data.values, &["world".into()]);

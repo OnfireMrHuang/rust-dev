@@ -19,7 +19,7 @@ impl MemTable {
             Some(table) => table,
             None => {
                 let entry = self.tables.entry(name.into()).or_default();
-                entry.zdowngrade()
+                entry.downgrade()
             }
         }
     }

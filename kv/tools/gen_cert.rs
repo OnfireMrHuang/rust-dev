@@ -21,14 +21,13 @@ async fn main() -> Result<()> {
 }
 
 fn create_ca() -> Result<CertPem> {
-    // 创建证书
     let (cert, key) = generate_ca(
-        &["acme.inc"], // 域名
-        "CN",          // 国家
-        "Acme Inc.",   // 组织
-        "Acme CA",     // 地区
+        &["acme.inc"],
+        "CN",
+        "Acme Inc.",
+        "Acme CA",
         None,
-        Some(10 * 365), // 过期时间
+        Some(10 * 365),
     )?;
     Ok(CertPem {
         cert_type: CertType::CA,

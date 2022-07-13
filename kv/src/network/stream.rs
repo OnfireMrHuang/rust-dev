@@ -130,7 +130,6 @@ mod tests {
     use anyhow::Result;
     use futures::prelude::*;
 
-    #[allow(clippy::all)]
     #[tokio::test]
     async fn prost_stream_should_work() -> Result<()> {
         let buf = BytesMut::new();
@@ -147,7 +146,7 @@ mod tests {
         if let Some(Ok(s)) = stream.next().await {
             assert_eq!(s, cmd);
         } else {
-            assert!(false);
+            unreachable!();
         }
         Ok(())
     }

@@ -1,11 +1,11 @@
 use anyhow::Result;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures::StreamExt;
-use kv6::{
-    start_client_with_config, start_server_with_config, ClientConfig, CommandRequest, ServerConfig,
-    StorageConfig, YamuxCtrl,
-};
 use rand::prelude::SliceRandom;
+use simple_kv::{
+    start_server_with_config, start_yamux_client_with_config, AppStream, ClientConfig,
+    CommandRequest, ServerConfig, StorageConfig, YamuxCtrl,
+};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::runtime::Builder;
@@ -32,7 +32,7 @@ async fn connect() -> Result<YamuxCtrl<TlsStream<TcpStream>>> {
     let mut config: ClientConfig = toml::from_str(include_str!("../fixtures/client.conf"))?;
     config.general.addr = addr.into();
 
-    Ok(start_client_with_config(&config).await?)
+    Ok(start_yamux_client_with_config(&config).await?)
 }
 
 async fn start_subscribers(topic: &'static str) -> Result<()> {
